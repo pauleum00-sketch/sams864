@@ -6,16 +6,18 @@
 - 사용 중
 
 ## 링크
-- GitHub: https://github.com/pauleum00/sams864
-- 배포: 없음 (GitHub Pages 예정)
+- GitHub: https://github.com/pauleum00-sketch/sams864
+- 배포: https://pauleum00-sketch.github.io/sams864/ (GitHub Pages, 저장소 공개 — 무료 플랜은 비공개 Pages 불가)
 
 ## 할 일
-- [ ] GitHub 저장소 생성 + 최초 푸시
-- [ ] GitHub Pages 배포
+- [x] GitHub 저장소 생성 + 최초 푸시 (2026-09-09)
+- [x] GitHub Pages 배포 (2026-09-09)
+- [ ] 아티팩트 진행상황을 data/state.json 씨앗으로 커밋 (음바울이 아티팩트 설정→JSON 복사 후 전달)
 - [ ] 한글 레터링 체계에 버퍼 5칸(UF 2·UFR 3) 글자 배정
-- [ ] 코너 복기 계속 — 라 열부터
 
 ## 기록
+- 2026-09-09: 유도 화살표 — 셋업 앞부분을 뗀 같은 커뮤테이터 공식을 부모로 자동 탐지(parseAlg/deriveMap), 호버 툴팁에 유도 사슬, 화살표 모드 전체/호버만/끄기, 전체 모드에서 연결 많은 칸 강조. 아티팩트 저장 코드 제거 → localStorage만(+data/state.json 1회 씨앗). charset 누락 수정
+- 2026-09-09: ~/Documents/개발 프로젝트 모음으로 이동, GitHub 비공개 저장소 생성. 복기 진척도는 앱만 원본(위키 기록 폐지)
 - 2026-08-23: 통합 작업공간(~/dev)으로 이전, 진행상황 파일 내보내기/가져오기 추가
 - 2026-08-23: 표 보기 열=첫 글자로 수정(큐브 시뮬레이터로 방향 검증), 역공식 숨김 토글
 - 2026-08-23: 공식 818개 전수 검증 — 3-사이클 정확성·다른 조각 무영향, 오류 0건. 표기 통일

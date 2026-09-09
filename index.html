@@ -1,3 +1,5 @@
+<!doctype html>
+<meta charset="utf-8">
 <title>삼스 864</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -206,6 +208,14 @@ table.mat{border-collapse:separate; border-spacing:0; min-width:max-content}
   max-width:1180px; margin:10px auto 0; padding:8px 16px; font-size:12.5px; color:var(--shaky-ink);
 }
 .banner:empty{display:none}
+/* ---------- 유도 화살표 ---------- */
+main,.mat-wrap{position:relative}
+svg.arrows{position:absolute; top:0; left:0; z-index:1; pointer-events:none; overflow:visible}
+svg.arrows path{fill:none; stroke:var(--accent); stroke-width:1.5; opacity:.5; marker-end:url(#ah)}
+svg.arrows.focus path{opacity:.1}
+svg.arrows path.on{opacity:1; stroke-width:2.4; marker-end:url(#ah2)}
+.chip.hov,.mcell.hov{position:relative; z-index:2; outline:2px solid var(--accent); outline-offset:-1px}
+.hub{box-shadow:inset 0 0 0 3px var(--hubc)}
 @media (max-width:560px){
   .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
   .grid.wide{grid-template-columns:1fr}
@@ -239,6 +249,11 @@ table.mat{border-collapse:separate; border-spacing:0; min-width:max-content}
   <div class="seg" id="revSeg">
     <button data-r="on" aria-pressed="true">역공식 표시</button>
     <button data-r="off" aria-pressed="false">숨김</button>
+  </div>
+  <div class="seg" id="arrowSeg" title="셋업 몇 회전으로 다른 공식에서 유도되는 관계를 화살표로 표시 (원본 → 파생)">
+    <button data-a="all" aria-pressed="false">화살표 전체</button>
+    <button data-a="hover" aria-pressed="true">호버만</button>
+    <button data-a="off" aria-pressed="false">끄기</button>
   </div>
   <div class="seg" id="filterSeg">
     <button data-f="all" aria-pressed="true">전체</button>
@@ -274,7 +289,7 @@ function defaultState(){
     orderC:DATA.ORDER_C.slice(), orderE:DATA.ORDER_E.slice(), showRev:true};
 }
 let state = defaultState();
-let ui = {tab:'c', filter:'all', view:'list'};
+let ui = {tab:'c', filter:'all', view:'list', arrows:'hover'};
 try{ const u=JSON.parse(localStorage.getItem(LS_UI)||'null'); if(u) ui=Object.assign(ui,u);}catch(e){}
 
 function normalize(s){
@@ -291,10 +306,10 @@ function normalize(s){
 }
 
 /* ---------------- persistence ---------------- */
-let artNS=null, artReady=false, localOnly=false, saveTimer=null, dirty=false;
 function lsSave(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
 function lsLoad(){ try{ return normalize(JSON.parse(localStorage.getItem(LS_KEY)||'null')); }catch(e){ return null; } }
 
+/* data/state.json 은 최초 1회 씨앗(아티팩트에서 옮겨온 진행상황). 이후엔 브라우저 localStorage 만 쓴다. */
 async function remoteLoad(){
   try{
     const r = await fetch('data/state.json', {cache:'no-store'});
@@ -308,28 +323,8 @@ function showSaved(msg){
 }
 function scheduleSave(){
   state.updatedAt = Date.now();
-  dirty=true; lsSave();
-  clearTimeout(saveTimer);
-  saveTimer=setTimeout(flushSave, 2500);
+  lsSave(); showSaved('이 브라우저에 저장됨');
 }
-async function flushSave(){
-  clearTimeout(saveTimer);
-  if(!dirty) return;
-  if(!artReady || localOnly){ dirty=false; showSaved('이 브라우저에 저장됨'); return; }
-  const payload = JSON.stringify(state);
-  dirty=false;
-  try{
-    await artNS.publish({'data/state.json': {content:payload, contentType:'application/json'}});
-    showSaved('저장됨 ✓');
-  }catch(err){
-    const code = err && err.code;
-    if(code==='conflict'){ /* view will reload to winner */ }
-    else if(code==='rate_limited'){ dirty=true; saveTimer=setTimeout(flushSave, 15000); }
-    else if(code==='upstream_error'){ dirty=true; saveTimer=setTimeout(flushSave, 4000+Math.random()*3000); }
-    else{ localOnly=true; setBanner('이 기기에서는 진행상황이 브라우저에만 저장됩니다 (다른 기기와 동기화 안 됨).'); showSaved('이 브라우저에 저장됨'); }
-  }
-}
-function setBanner(t){ $('#banner').textContent = t||''; }
 
 /* ---------------- scheme helpers ---------------- */
 function schemeC(){ return state.schemeMode==='speffz' ? IDENT_C : state.schemeC; }
@@ -388,6 +383,7 @@ function renderTabs(){
   const ce = ui.tab==='c'||ui.tab==='e';
   $('#viewSeg').style.display = ce ? 'inline-flex':'none';
   $('#revSeg').style.display = ce ? 'inline-flex':'none';
+  $('#arrowSeg').style.display = ce ? 'inline-flex':'none';
 }
 
 /* ---------------- header counters ---------------- */
@@ -396,6 +392,101 @@ function renderCounts(){
   $('#cMain').textContent=core;
   $('#pbarFill').style.width=(core/818*100).toFixed(1)+'%';
   $('#cSub').innerHTML='패리티 <b>'+cat.p+'</b>/21 · 플립 <b>'+cat.f+'</b>/11 · 트위스트 <b>'+cat.t+'</b>/14';
+}
+
+/* ---------------- 유도 관계 ----------------
+   "S : [A, B]" 꼴에서 셋업 S의 앞 k개 무브를 떼어낸 "S' : [A, B]"가 표에 있으면 그 공식이 부모(선행).
+   k가 가장 작은 부모 하나만 잇는다. 예) 강+장 D' R UD : [R' D' R, U2] → D' 떼면 강+앙 R UD : [R' D' R, U2].
+   저장된 데이터가 아니라 공식표에서 매번 계산하므로 공식을 고치면 화살표도 따라온다. */
+function parseAlg(a){
+  a=String(a||'').trim();
+  const m=a.match(/^(.*?)\s*:\s*(\[.*\])$/);
+  if(m) return {setup:m[1].trim().split(/\s+/).filter(Boolean), comm:m[2].replace(/\s+/g,' ')};
+  if(/^\[.*\]$/.test(a)) return {setup:[], comm:a.replace(/\s+/g,' ')};
+  return null;
+}
+function deriveMap(db){
+  const idx={}, parsed={};
+  for(const p in db){ const q=parseAlg(db[p]); if(!q) continue; parsed[p]=q; idx[q.setup.join(' ')+'|'+q.comm]=p; }
+  const parent={}, children={};
+  for(const p in parsed){
+    const {setup,comm}=parsed[p];
+    for(let k=1;k<=setup.length;k++){
+      const q=idx[setup.slice(k).join(' ')+'|'+comm];
+      if(q && q!==p){ parent[p]={from:q, setup:setup.slice(0,k).join(' ')}; (children[q]=children[q]||[]).push(p); break; }
+    }
+  }
+  return {parent,children};
+}
+const dmCache={};
+function dmFor(type){ return dmCache[type] || (dmCache[type]=deriveMap(type==='c'?DATA.corners:DATA.edges)); }
+/* 호버 툴팁용 유도 과정 텍스트 (조상 사슬 + 직계 파생) */
+function deriveText(type,p){
+  const dm=dmFor(type), L=type==='c'?LC:LE, db=type==='c'?DATA.corners:DATA.edges;
+  const name=q=>L(q[0])+L(q[1]);
+  const lines=[];
+  let cur=p, guard=0;
+  while(dm.parent[cur] && guard++<12){ const {from,setup}=dm.parent[cur]; lines.push('← '+setup+' 셋업 + '+name(from)+'  '+db[from]); cur=from; }
+  const kids=dm.children[p]||[];
+  if(kids.length) lines.push('→ 파생 '+kids.length+': '+kids.map(q=>name(q)+'(+'+dm.parent[q].setup+')').join(', '));
+  return lines.length ? '유도\n'+lines.join('\n') : '';
+}
+/* 줄기: 조상 전부 + 자손 전부 */
+function lineage(type,p){
+  const dm=dmFor(type), set=new Set([p]);
+  let cur=p, guard=0; while(dm.parent[cur] && guard++<12){ cur=dm.parent[cur].from; set.add(cur); }
+  const stack=[p]; while(stack.length){ const x=stack.pop(); for(const c of (dm.children[x]||[])){ if(!set.has(c)){ set.add(c); stack.push(c); } } }
+  return set;
+}
+let hoverKey=null;
+function arrowHost(){ return (ui.view==='matrix' && $('.mat-wrap')) || $('#main'); }
+function drawArrows(){
+  const host=arrowHost(); if(!host) return;
+  host.querySelectorAll('svg.arrows').forEach(x=>x.remove());
+  host.querySelectorAll('.hub').forEach(x=>{ x.classList.remove('hub'); x.style.removeProperty('--hubc'); });
+  const mode=ui.arrows||'hover', type=ui.tab;
+  if(mode==='off' || !(type==='c'||type==='e')) return;
+  const dm=dmFor(type);
+  const els={};
+  host.querySelectorAll('[data-key]').forEach(e=>{ if(e.dataset.key[0]===type && e.offsetParent!==null) els[e.dataset.key.slice(2)]=e; });
+  let pairs=Object.keys(els);
+  if(mode==='hover'){
+    if(!hoverKey || hoverKey[0]!==type) return;
+    const set=lineage(type, hoverKey.slice(2)); pairs=pairs.filter(p=>set.has(p));
+  }
+  const hr=host.getBoundingClientRect(), sx=host.scrollLeft, sy=host.scrollTop;
+  const box=e=>{ const r=e.getBoundingClientRect(); return {cx:r.left-hr.left+sx+r.width/2, cy:r.top-hr.top+sy+r.height/2, w:r.width, h:r.height}; };
+  const edge=(b,tx,ty)=>{ const dx=tx-b.cx, dy=ty-b.cy; const k=Math.min(b.w/2/(Math.abs(dx)||1e-9), b.h/2/(Math.abs(dy)||1e-9)); return [b.cx+dx*k, b.cy+dy*k]; };
+  const NS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(NS,'svg'); svg.setAttribute('class','arrows');
+  svg.setAttribute('width',host.scrollWidth); svg.setAttribute('height',host.scrollHeight);
+  svg.innerHTML='<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--accent)" opacity=".7"/></marker>'
+    +'<marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker></defs>';
+  const inSet = mode==='hover' ? null : (hoverKey && hoverKey[0]===type ? lineage(type, hoverKey.slice(2)) : null);
+  const deg={};
+  for(const p of pairs){
+    const pr=dm.parent[p]; if(!pr || !els[pr.from] || !els[p]) continue;
+    deg[pr.from]=(deg[pr.from]||0)+1; deg[p]=(deg[p]||0)+1;
+    const a=box(els[pr.from]), b=box(els[p]);
+    const mx=(a.cx+b.cx)/2, my=(a.cy+b.cy)/2, dx=b.cx-a.cx, dy=b.cy-a.cy, d=Math.hypot(dx,dy)||1;
+    const off=Math.min(60, d*0.25), qx=mx-dy/d*off, qy=my+dx/d*off;
+    const [x1,y1]=edge(a,qx,qy), [x2,y2]=edge(b,qx,qy);
+    const path=document.createElementNS(NS,'path');
+    path.setAttribute('d','M'+x1.toFixed(1)+' '+y1.toFixed(1)+' Q'+qx.toFixed(1)+' '+qy.toFixed(1)+' '+x2.toFixed(1)+' '+y2.toFixed(1));
+    path.dataset.from=pr.from; path.dataset.to=p;
+    if(inSet && inSet.has(p) && inSet.has(pr.from)) path.classList.add('on');
+    svg.appendChild(path);
+  }
+  if(inSet) svg.classList.add('focus');
+  if(mode==='all') for(const p in deg){ if(deg[p]>1){ els[p].classList.add('hub'); els[p].style.setProperty('--hubc','color-mix(in srgb, var(--accent) '+Math.min(85, 10+deg[p]*15)+'%, transparent)'); } }
+  host.insertBefore(svg, host.firstChild);
+}
+/* 전체 모드에서 호버 칸의 줄기만 진하게 (svg 재생성 없이 클래스만) */
+function updateFocus(){
+  const host=arrowHost(), svg=host && host.querySelector('svg.arrows'); if(!svg) return;
+  const type=ui.tab, set=(hoverKey && hoverKey[0]===type) ? lineage(type, hoverKey.slice(2)) : null;
+  svg.classList.toggle('focus', !!set);
+  svg.querySelectorAll('path').forEach(pa=>pa.classList.toggle('on', !!set && set.has(pa.dataset.to) && set.has(pa.dataset.from)));
 }
 
 /* ---------------- pair chips (corner / edge) ---------------- */
@@ -423,6 +514,7 @@ function chipBtn(key, label, alg, extra){
   b.innerHTML='<span class="pr">'+label+(extra||'')+'<span class="st">'+(st?esc(ST_NAMES[st]):'')+'</span></span>'
     +'<span class="alg">'+esc(alg)+'</span>';
   b.setAttribute('aria-label', b.textContent);
+  if(key[0]==='c'||key[0]==='e'){ const dt=deriveText(key[0], key.slice(2)); if(dt) b.title=dt; }
   b.onclick=()=>{
     const nv=(getSt(key)+1)%4;
     setProgress(key,nv);
@@ -487,6 +579,7 @@ function renderPairs(type){
   }
   if(!anyShown) main.appendChild(el('p','empty-note','현재 필터에 해당하는 공식이 없습니다.'));
   updateSecCounts();
+  drawArrows();
 }
 
 /* ---------------- matrix view (corner / edge) ---------------- */
@@ -537,6 +630,8 @@ function renderMatrix(type){
       colReg[f].keys.push(key);
       const st=getSt(key);
       td.className='mcell s'+st;
+      td.dataset.key=key;
+      { const dt=deriveText(type,p); if(dt) td.title=dt; }
       td.tabIndex=0;
       td.setAttribute('role','button');
       td.setAttribute('aria-label', L(f)+L(last)+' '+(st?ST_NAMES[st]:'미학습'));
@@ -562,6 +657,7 @@ function renderMatrix(type){
   wrap.appendChild(tbl);
   main.appendChild(wrap);
   updateSecCounts();
+  drawArrows();
 }
 
 /* ---------------- simple lists (parity / flips / twists) ---------------- */
@@ -747,7 +843,7 @@ function renderSettings(){
 
   /* data card */
   const dc=el('div','set-card');
-  dc.innerHTML='<h2>데이터</h2><p class="desc">진행상황은 자동 저장됩니다. 여러 기기에서 쓰려면 파일로 저장해 옮기세요. 표기 공식 중 <span class="drv" style="border:1px solid var(--rule);border-radius:4px;padding:0 4px;font-size:11px">역</span> 표시는 시트에 없는 방향이라 반대 방향 공식에서 자동 유도(커뮤테이터 순서 교환)한 것입니다.</p>';
+  dc.innerHTML='<h2>데이터</h2><p class="desc">진행상황은 이 브라우저(localStorage)에만 자동 저장됩니다. 다른 기기에서 쓰려면 파일로 저장해 옮기세요. 공식 위에 마우스를 올리면 유도 과정(셋업 몇 회전으로 어느 공식에서 왔는지)이 보이고, 툴바의 화살표 모드로 원본→파생 관계를 그려 볼 수 있습니다. 표기 공식 중 <span class="drv" style="border:1px solid var(--rule);border-radius:4px;padding:0 4px;font-size:11px">역</span> 표시는 시트에 없는 방향이라 반대 방향 공식에서 자동 유도(커뮤테이터 순서 교환)한 것입니다.</p>';
   const btns=el('div','preset-row');
   const ex=el('button','btn','진행상황 파일로 저장');
   ex.onclick=()=>{
@@ -822,7 +918,17 @@ $('#filterSeg').addEventListener('click', e=>{
   for(const x of $('#filterSeg').children) x.setAttribute('aria-pressed', x===b?'true':'false');
   renderMain();
 });
+$('#arrowSeg').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  ui.arrows=b.dataset.a;
+  try{localStorage.setItem(LS_UI,JSON.stringify(ui));}catch(e2){}
+  syncArrowSeg(); drawArrows();
+});
+function syncArrowSeg(){
+  for(const x of $('#arrowSeg').children) x.setAttribute('aria-pressed', x.dataset.a===(ui.arrows||'hover')?'true':'false');
+}
 function syncFilterSeg(){
+  syncArrowSeg();
   for(const x of $('#filterSeg').children) x.setAttribute('aria-pressed', x.dataset.f===ui.filter?'true':'false');
 }
 
@@ -841,21 +947,22 @@ async function boot(){
   if(local) state=local;
   renderTabs(); syncFilterSeg(); syncViewSeg(); renderCounts(); renderMain();
 
-  if(window.claude && typeof claude.use==='function'){
-    try{ artNS = await claude.use('artifact'); }catch(e){ artNS=null; }
-  }
-  artReady = !!artNS;
-  if(!artReady){ localOnly=true; setBanner('진행상황이 이 브라우저에만 저장됩니다.'); }
-
-  const remote=await remoteLoad();
-  if(remote && (!local || remote.updatedAt>local.updatedAt)){
-    state=remote; lsSave();
+  const seed=await remoteLoad();
+  if(seed && (!local || seed.updatedAt>local.updatedAt)){
+    state=seed; lsSave();
     renderCounts(); renderMain();
-  }else if(local && remote && local.updatedAt>remote.updatedAt){
-    dirty=true; flushSave();
+    showSaved('씨앗 진행상황 불러옴');
   }
 }
-document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden' && dirty) flushSave(); });
+window.addEventListener('resize', ()=>{ clearTimeout(drawArrows._t); drawArrows._t=setTimeout(drawArrows,150); });
+document.addEventListener('mouseover', e=>{
+  const t=e.target.closest ? e.target.closest('[data-key]') : null;
+  const k=t ? t.dataset.key : null;
+  if(k===hoverKey) return;
+  document.querySelectorAll('.hov').forEach(x=>x.classList.remove('hov'));
+  hoverKey=k; if(t) t.classList.add('hov');
+  if(ui.arrows==='hover') drawArrows(); else if(ui.arrows==='all') updateFocus();
+});
 boot();
 })();
 </script>
