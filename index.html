@@ -471,7 +471,20 @@ function drawArrows(){
     const a=box(els[pr.from]), b=box(els[p]);
     const dx=b.cx-a.cx, dy=b.cy-a.cy;
     let x1,y1,x2,y2,c1x,c1y,c2x,c2y;
-    if(Math.abs(dx)>=Math.abs(dy)){ /* 좌우: 옆면에서 나가 옆면으로, 수평 접선 */
+    const gapX=Math.abs(dx)-(a.w+b.w)/2, gapY=Math.abs(dy)-(a.h+b.h)/2;
+    if(gapX<16 && gapY<16){ /* 맞닿은 칸: 같은 쪽 면에서 나가 갈고리로 돌아 들어온다 (짧은 직선은 테두리에 가려짐) */
+      if(Math.abs(dy)>=Math.abs(dx)){ /* 위아래 이웃 → 옆면 갈고리, 오른쪽에 자리 없으면 왼쪽 */
+        const sg = Math.max(a.cx+a.w/2, b.cx+b.w/2)+48 < host.scrollWidth ? 1 : -1;
+        x1=a.cx+sg*a.w/2; y1=a.cy; x2=b.cx+sg*b.w/2; y2=b.cy;
+        const bulge=Math.max(30, Math.abs(dy)*0.9+12);
+        c1x=x1+sg*bulge; c1y=y1; c2x=x2+sg*bulge; c2y=y2;
+      }else{ /* 좌우 이웃 → 윗면 아치, 맨 윗줄(머리글에 가림)이면 아랫면 아치 */
+        const bulge=Math.max(26, Math.abs(dx)*0.6);
+        const up = a.cy-a.h/2-bulge > 4 ? -1 : 1;
+        x1=a.cx; y1=a.cy+up*a.h/2; x2=b.cx; y2=b.cy+up*b.h/2;
+        c1x=x1; c1y=y1+up*bulge; c2x=x2; c2y=y2+up*bulge;
+      }
+    }else if(gapX>=gapY){ /* 좌우: 옆면에서 나가 옆면으로, 수평 접선 */
       const sg=dx>=0?1:-1;
       x1=a.cx+sg*a.w/2; y1=a.cy; x2=b.cx-sg*b.w/2; y2=b.cy;
       const h=Math.max(24, Math.abs(x2-x1)/2);
