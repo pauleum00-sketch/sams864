@@ -468,7 +468,7 @@ function drawArrows(){
   if(mode==='hover'){ if(!L) return; pairs=pairs.filter(p=>L.all.has(p)); }
   const hr=host.getBoundingClientRect(), sx=host.scrollLeft, sy=host.scrollTop;
   const box=e=>{ const r=e.getBoundingClientRect(); const l=r.left-hr.left+sx, t=r.top-hr.top+sy; return {l,t,r:l+r.width,b:t+r.height,cx:l+r.width/2,cy:t+r.height/2}; };
-  const R={}; for(const p of pairs) R[p]=box(els[p]);
+  const R={}; for(const p of pairs){ R[p]=box(els[p]); R[p].id=p; }
   const NS='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(NS,'svg'); svg.setAttribute('class','arrows');
   svg.setAttribute('width',host.scrollWidth); svg.setAttribute('height',host.scrollHeight);
@@ -484,11 +484,13 @@ function drawArrows(){
     minX:(host.querySelector('th.rh')||{offsetWidth:0}).offsetWidth};
   const lineRects = L ? [...L.all].filter(p=>R[p]).map(p=>R[p]) : null;
   const deg={};
-  for(const par in groups){
+  /* 한 칸이 자식(꼬리)이면서 부모(머리)이면 두 선이 같은 변에 붙지 않도록, 쓴 변을 기록하며 큰 트리부터 배치 */
+  const used={};
+  for(const par of Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length)){
     const kids=groups[par];
     deg[par]=(deg[par]||0)+kids.length; for(const k of kids) deg[k]=(deg[k]||0)+1;
     const obst = lineRects || [R[par], ...kids.map(k=>R[k])];
-    for(const d of routeTree(R[par], kids.map(k=>R[k]), obst, bounds)){
+    for(const d of routeTree(R[par], kids.map(k=>R[k]), obst, bounds, used)){
       const path=document.createElementNS(NS,'path');
       const from = d.cls==='kid' ? kids[d.i] : par;
       path.setAttribute('d',d.d); path.setAttribute('class', d.cls+' '+classify(L, d.cls, from, par));
@@ -507,8 +509,10 @@ function drawArrows(){
    반환: [{d, cls:'kid'|'par'|'trunk', i}]
    ponytail: 다른 트리의 선과의 교차는 계산하지 않는다(칸만 피함). 필요하면 이미 그린 선분을 obst에 넣어 확장. */
 const STUB=22, RAD=12;
-function routeTree(P, K, obst, B){
+function routeTree(P, K, obst, B, used){
   const all=[P,...K];
+  used=used||{};
+  const sideOf=(vert,uT,uc)=> vert ? (uT<uc?'l':'r') : (uT<uc?'t':'b');
   let best=null;
   for(const vert of [true,false]){
     const U = vert ? c=>[c.l,c.r,c.cx] : c=>[c.t,c.b,c.cy];
@@ -526,6 +530,7 @@ function routeTree(P, K, obst, B){
       for(const c of all){
         const [u0,u1,uc]=U(c), vc=V(c), ue=uT<uc?u0:u1, lo=Math.min(uT,ue), hi=Math.max(uT,ue);
         if(uT>u0&&uT<u1) viol+=5;                       /* 줄기가 칸 안을 지남 */
+        if(used[c.id] && used[c.id].has(sideOf(vert,uT,uc))) viol+=4; /* 그 변은 이미 다른 트리의 머리/꼬리가 씀 */
         else if(hi-lo<6) viol+=3;                       /* 머리·꼬리가 칸 틈에 묻힘 */
         else if(!straight && hi-lo<STUB-0.5) viol+=2;   /* 꺾기 전 직선 부족 */
         len+=hi-lo;
@@ -536,6 +541,7 @@ function routeTree(P, K, obst, B){
   }
   if(!best) return [];
   const {uT,vert}=best;
+  for(const c of all){ (used[c.id]=used[c.id]||new Set()).add(sideOf(vert,uT,c[vert?'cx':'cy'])); }
   const U = vert ? c=>[c.l,c.r,c.cx] : c=>[c.t,c.b,c.cy];
   const V = vert ? c=>c.cy : c=>c.cx;
   const vs=all.map(V), vMin=Math.min(...vs), vMax=Math.max(...vs);
