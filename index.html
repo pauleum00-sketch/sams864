@@ -211,11 +211,13 @@ table.mat{border-collapse:separate; border-spacing:0; min-width:max-content}
 /* ---------- 유도 화살표 ---------- */
 main,.mat-wrap{position:relative}
 svg.arrows{position:absolute; top:0; left:0; z-index:1; pointer-events:none; overflow:visible}
-svg.arrows path{fill:none; stroke:#fff; stroke-width:1.6; opacity:.55; marker-start:url(#as); marker-end:url(#ah); filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
+svg.arrows path{fill:none; stroke:#fff; stroke-width:1.6; stroke-linecap:round; opacity:.55; filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
+svg.arrows path.kid{marker-start:url(#as)}
+svg.arrows path.par{marker-end:url(#ah)}
 svg.arrows.focus path{opacity:.12}
-svg.arrows path.on{opacity:1; stroke-width:2.4}
-.chip.lin,.mcell.lin{outline:1.5px solid var(--accent); outline-offset:-1px; opacity:1}
-.chip.hov,.mcell.hov{position:relative; z-index:2; outline:2.5px solid var(--accent); outline-offset:-1px}
+svg.arrows path.on{opacity:1; stroke-width:2.2}
+.chip.lin,.mcell.lin{outline:1.5px solid #fff; outline-offset:-1px; opacity:1; box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.chip.hov,.mcell.hov{position:relative; z-index:2; outline:2.5px solid #fff; outline-offset:-1px; box-shadow:0 0 0 1px rgba(0,0,0,.35)}
 .hub{box-shadow:inset 0 0 0 3px var(--hubc)}
 @media (max-width:560px){
   .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
@@ -451,59 +453,86 @@ function drawArrows(){
   const els={};
   host.querySelectorAll('[data-key]').forEach(e=>{ if(e.dataset.key[0]===type && e.offsetParent!==null) els[e.dataset.key.slice(2)]=e; });
   let pairs=Object.keys(els);
-  if(mode==='hover'){
-    if(!hoverKey || hoverKey[0]!==type) return;
-    const set=lineage(type, hoverKey.slice(2)); pairs=pairs.filter(p=>set.has(p));
-  }
+  const inSet = hoverKey && hoverKey[0]===type ? lineage(type, hoverKey.slice(2)) : null;
+  markLineage(host, els, inSet);
+  if(mode==='hover'){ if(!inSet) return; pairs=pairs.filter(p=>inSet.has(p)); }
   const hr=host.getBoundingClientRect(), sx=host.scrollLeft, sy=host.scrollTop;
-  const box=e=>{ const r=e.getBoundingClientRect(); return {cx:r.left-hr.left+sx+r.width/2, cy:r.top-hr.top+sy+r.height/2, w:r.width, h:r.height}; };
+  const box=e=>{ const r=e.getBoundingClientRect(); const l=r.left-hr.left+sx, t=r.top-hr.top+sy; return {l,t,r:l+r.width,b:t+r.height,cx:l+r.width/2,cy:t+r.height/2}; };
+  const R={}; for(const p of pairs) R[p]=box(els[p]);
   const NS='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(NS,'svg'); svg.setAttribute('class','arrows');
   svg.setAttribute('width',host.scrollWidth); svg.setAttribute('height',host.scrollHeight);
-  svg.innerHTML='<defs><marker id="as" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5"><circle cx="5" cy="5" r="4" fill="#fff"/></marker>'
-    +'<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 1L10 5L0 9z" fill="#fff"/></marker></defs>';
-  const inSet = hoverKey && hoverKey[0]===type ? lineage(type, hoverKey.slice(2)) : null;
-  markLineage(host, els, inSet);
+  svg.innerHTML='<defs><marker id="as" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5"><circle cx="5" cy="5" r="4.5" fill="#fff"/></marker>'
+    +'<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="#fff"/></marker></defs>';
+  /* 부모 하나당 트리 하나: 자식들 → 줄기 → 부모 (유도 과정 방향: 셋업을 떼어 원본으로) */
+  const groups={};
+  for(const p of pairs){ const pr=dm.parent[p]; if(pr && R[pr.from]) (groups[pr.from]=groups[pr.from]||[]).push(p); }
+  const bounds={w:host.scrollWidth, h:host.scrollHeight, minY:(host.querySelector('thead')||{offsetHeight:0}).offsetHeight};
+  const lineRects = inSet ? [...inSet].filter(p=>R[p]).map(p=>R[p]) : null;
   const deg={};
-  for(const p of pairs){
-    const pr=dm.parent[p]; if(!pr || !els[pr.from] || !els[p]) continue;
-    deg[pr.from]=(deg[pr.from]||0)+1; deg[p]=(deg[p]||0)+1;
-    const a=box(els[pr.from]), b=box(els[p]);
-    const dx=b.cx-a.cx, dy=b.cy-a.cy;
-    let x1,y1,x2,y2,c1x,c1y,c2x,c2y;
-    const gapX=Math.abs(dx)-(a.w+b.w)/2, gapY=Math.abs(dy)-(a.h+b.h)/2;
-    if(gapX<16 && gapY<16){ /* 맞닿은 칸: 같은 쪽 면에서 나가 갈고리로 돌아 들어온다 (짧은 직선은 테두리에 가려짐) */
-      if(Math.abs(dy)>=Math.abs(dx)){ /* 위아래 이웃 → 옆면 갈고리, 오른쪽에 자리 없으면 왼쪽 */
-        const sg = Math.max(a.cx+a.w/2, b.cx+b.w/2)+48 < host.scrollWidth ? 1 : -1;
-        x1=a.cx+sg*a.w/2; y1=a.cy; x2=b.cx+sg*b.w/2; y2=b.cy;
-        const bulge=Math.max(30, Math.abs(dy)*0.9+12);
-        c1x=x1+sg*bulge; c1y=y1; c2x=x2+sg*bulge; c2y=y2;
-      }else{ /* 좌우 이웃 → 윗면 아치, 맨 윗줄(머리글에 가림)이면 아랫면 아치 */
-        const bulge=Math.max(26, Math.abs(dx)*0.6);
-        const up = a.cy-a.h/2-bulge > 4 ? -1 : 1;
-        x1=a.cx; y1=a.cy+up*a.h/2; x2=b.cx; y2=b.cy+up*b.h/2;
-        c1x=x1; c1y=y1+up*bulge; c2x=x2; c2y=y2+up*bulge;
-      }
-    }else if(gapX>=gapY){ /* 좌우: 옆면에서 나가 옆면으로, 수평 접선 */
-      const sg=dx>=0?1:-1;
-      x1=a.cx+sg*a.w/2; y1=a.cy; x2=b.cx-sg*b.w/2; y2=b.cy;
-      const h=Math.max(24, Math.abs(x2-x1)/2);
-      c1x=x1+sg*h; c1y=y1; c2x=x2-sg*h; c2y=y2;
-    }else{ /* 상하: 위아래면에서, 수직 접선 */
-      const sg=dy>=0?1:-1;
-      x1=a.cx; y1=a.cy+sg*a.h/2; x2=b.cx; y2=b.cy-sg*b.h/2;
-      const v=Math.max(24, Math.abs(y2-y1)/2);
-      c1x=x1; c1y=y1+sg*v; c2x=x2; c2y=y2-sg*v;
-    }
-    const path=document.createElementNS(NS,'path');
-    path.setAttribute('d','M'+x1.toFixed(1)+' '+y1.toFixed(1)+' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+' '+c2x.toFixed(1)+' '+c2y.toFixed(1)+' '+x2.toFixed(1)+' '+y2.toFixed(1));
-    path.dataset.from=pr.from; path.dataset.to=p;
-    if(inSet && inSet.has(p) && inSet.has(pr.from)) path.classList.add('on');
-    svg.appendChild(path);
+  for(const par in groups){
+    const kids=groups[par];
+    deg[par]=(deg[par]||0)+kids.length; for(const k of kids) deg[k]=(deg[k]||0)+1;
+    const obst = lineRects || [R[par], ...kids.map(k=>R[k])];
+    const paths=routeTree(R[par], kids.map(k=>R[k]), obst, bounds);
+    paths.forEach((d,i)=>{
+      const path=document.createElementNS(NS,'path');
+      path.setAttribute('d',d.d); path.setAttribute('class',d.cls);
+      path.dataset.from = d.cls==='kid' ? kids[d.i] : par; path.dataset.to=par;
+      if(inSet && inSet.has(path.dataset.from) && inSet.has(par)) path.classList.add('on');
+      svg.appendChild(path);
+    });
   }
   if(inSet && mode==='all') svg.classList.add('focus');
-  if(mode==='all') for(const p in deg){ if(deg[p]>1){ els[p].classList.add('hub'); els[p].style.setProperty('--hubc','color-mix(in srgb, var(--accent) '+Math.min(85, 10+deg[p]*15)+'%, transparent)'); } }
+  if(mode==='all') for(const p in deg){ if(deg[p]>1){ els[p].classList.add('hub'); els[p].style.setProperty('--hubc','color-mix(in srgb, #fff '+Math.min(85, 10+deg[p]*15)+'%, transparent)'); } }
   host.insertBefore(svg, host.firstChild);
+}
+/* 개요 트리 라우팅: 수평·수직 선만, 꺾이는 곳만 둥글게.
+   줄기(trunk)는 그룹 칸들의 바깥 여백 중 obst(줄기 내 칸)를 가장 적게 관통하고 가지 길이가 짧은 위치.
+   칸이 모두 한 줄에 있으면 줄기를 가로로 눕힌다. 반환: [{d, cls:'kid'|'par'|'trunk', i}] */
+function routeTree(P, K, obst, B){
+  const all=[P,...K];
+  const ys=all.map(c=>c.cy);
+  const vert = Math.max(...ys)-Math.min(...ys) > 14;
+  const U = vert ? c=>[c.l,c.r,c.cx] : c=>[c.t,c.b,c.cy];
+  const V = vert ? c=>c.cy : c=>c.cx;
+  const m=5, r=6;
+  const cand=new Set(); for(const c of all){ const [u0,u1]=U(c); cand.add(u0-m); cand.add(u1+m); }
+  const vs=all.map(V), vMin=Math.min(...vs), vMax=Math.max(...vs);
+  const lim = vert ? [4,B.w-4] : [B.minY+4,B.h-4];
+  let best=null;
+  for(const uT of cand){
+    if(uT<lim[0]||uT>lim[1]) continue;
+    let viol=0, len=0;
+    for(const o of obst){ const [u0,u1]=U(o), ov=V(o), oh=vert?(o.b-o.t)/2:(o.r-o.l)/2; if(uT>u0&&uT<u1 && ov+oh>vMin && ov-oh<vMax) viol++; }
+    for(const c of all){
+      const [u0,u1,uc]=U(c), vc=V(c), ue=uT<uc?u0:u1, lo=Math.min(uT,ue), hi=Math.max(uT,ue);
+      len+=hi-lo;
+      for(const o of obst){ if(o===c) continue; const [ou0,ou1]=U(o), ov=V(o), oh=vert?(o.b-o.t)/2:(o.r-o.l)/2; if(vc>ov-oh&&vc<ov+oh && ou1>lo && ou0<hi) viol++; }
+    }
+    if(!best || viol<best.viol || (viol===best.viol && len<best.len)) best={uT,viol,len};
+  }
+  if(!best) return [];
+  const uT=best.uT;
+  const pt = vert ? (u,v)=>u.toFixed(1)+' '+v.toFixed(1) : (u,v)=>v.toFixed(1)+' '+u.toFixed(1);
+  const vP=V(P), out=[];
+  /* 줄기 끝(양 극단)에서만 꺾이므로 그곳만 둥글게; 가운데 합류는 T자 */
+  const endR=v=>{ const other = v===vMin ? vMax : vMin; return (v===vMin||v===vMax) && Math.abs(other-v)>1 ? Math.min(r, Math.abs(other-v)/2) : 0; };
+  K.forEach((c,i)=>{
+    const [u0,u1,uc]=U(c), vc=V(c), sg=uT<uc?-1:1, ue=sg<0?u0:u1;
+    const rr=Math.min(endR(vc), Math.abs(uT-ue)/2), dir=Math.sign((vc===vMin?vMax:vMin)-vc);
+    let d='M'+pt(ue,vc)+' L'+pt(uT-sg*rr,vc);
+    if(rr>0.5) d+=' Q'+pt(uT,vc)+' '+pt(uT,vc+dir*rr);
+    out.push({d,cls:'kid',i});
+  });
+  { const [u0,u1,uc]=U(P), sg=uT<uc?-1:1, ue=sg<0?u0:u1;
+    const rr=Math.min(endR(vP), Math.abs(uT-ue)/2), dir=Math.sign((vP===vMin?vMax:vMin)-vP);
+    let d= rr>0.5 ? 'M'+pt(uT,vP+dir*rr)+' Q'+pt(uT,vP)+' '+pt(uT-sg*rr,vP) : 'M'+pt(uT,vP);
+    d+=' L'+pt(ue,vP);
+    out.push({d,cls:'par',i:-1}); }
+  const r0=endR(vMin), r1=endR(vMax);
+  if(vMax-vMin-r0-r1>0.5) out.push({d:'M'+pt(uT,vMin+r0)+' L'+pt(uT,vMax-r1),cls:'trunk',i:-1});
+  return out;
 }
 /* 줄기에 든 칸 윤곽 표시 */
 function markLineage(host, els, set){
