@@ -470,9 +470,9 @@ function drawArrows(){
   const NS='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(NS,'svg'); svg.setAttribute('class','arrows');
   svg.setAttribute('width',host.scrollWidth); svg.setAttribute('height',host.scrollHeight);
-  /* 꼬리 = 속이 찬 원, 머리 = 선으로 그린 삼각형. 선 굵기와 무관한 고정 크기 */
+  /* 꼬리 = 속이 찬 원, 머리 = 속이 찬 정삼각형(꼭짓점이 칸 변에 닿음). 선 굵기와 무관한 고정 크기 */
   svg.innerHTML='<defs><marker id="as" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" fill="#fff"/></marker>'
-    +'<marker id="ah" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1L11 6L1 11z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></marker></defs>';
+    +'<marker id="ah" viewBox="0 0 10 10" refX="8.66" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L8.66 5L0 10z" fill="#fff"/></marker></defs>';
   /* 부모 하나당 트리 하나: 자식들 → 줄기 → 부모 (유도 과정 방향: 셋업을 떼어 원본으로) */
   const groups={};
   for(const p of pairs){ const pr=dm.parent[p]; if(pr && R[pr.from]) (groups[pr.from]=groups[pr.from]||[]).push(p); }
