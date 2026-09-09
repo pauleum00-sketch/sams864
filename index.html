@@ -211,10 +211,11 @@ table.mat{border-collapse:separate; border-spacing:0; min-width:max-content}
 /* ---------- 유도 화살표 ---------- */
 main,.mat-wrap{position:relative}
 svg.arrows{position:absolute; top:0; left:0; z-index:1; pointer-events:none; overflow:visible}
-svg.arrows path{fill:none; stroke:var(--accent); stroke-width:1.5; opacity:.5; marker-end:url(#ah)}
-svg.arrows.focus path{opacity:.1}
-svg.arrows path.on{opacity:1; stroke-width:2.4; marker-end:url(#ah2)}
-.chip.hov,.mcell.hov{position:relative; z-index:2; outline:2px solid var(--accent); outline-offset:-1px}
+svg.arrows path{fill:none; stroke:#fff; stroke-width:1.6; opacity:.55; marker-start:url(#as); marker-end:url(#ah); filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
+svg.arrows.focus path{opacity:.12}
+svg.arrows path.on{opacity:1; stroke-width:2.4}
+.chip.lin,.mcell.lin{outline:1.5px solid var(--accent); outline-offset:-1px; opacity:1}
+.chip.hov,.mcell.hov{position:relative; z-index:2; outline:2.5px solid var(--accent); outline-offset:-1px}
 .hub{box-shadow:inset 0 0 0 3px var(--hubc)}
 @media (max-width:560px){
   .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
@@ -456,35 +457,52 @@ function drawArrows(){
   }
   const hr=host.getBoundingClientRect(), sx=host.scrollLeft, sy=host.scrollTop;
   const box=e=>{ const r=e.getBoundingClientRect(); return {cx:r.left-hr.left+sx+r.width/2, cy:r.top-hr.top+sy+r.height/2, w:r.width, h:r.height}; };
-  const edge=(b,tx,ty)=>{ const dx=tx-b.cx, dy=ty-b.cy; const k=Math.min(b.w/2/(Math.abs(dx)||1e-9), b.h/2/(Math.abs(dy)||1e-9)); return [b.cx+dx*k, b.cy+dy*k]; };
   const NS='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(NS,'svg'); svg.setAttribute('class','arrows');
   svg.setAttribute('width',host.scrollWidth); svg.setAttribute('height',host.scrollHeight);
-  svg.innerHTML='<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--accent)" opacity=".7"/></marker>'
-    +'<marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker></defs>';
-  const inSet = mode==='hover' ? null : (hoverKey && hoverKey[0]===type ? lineage(type, hoverKey.slice(2)) : null);
+  svg.innerHTML='<defs><marker id="as" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5"><circle cx="5" cy="5" r="4" fill="#fff"/></marker>'
+    +'<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 1L10 5L0 9z" fill="#fff"/></marker></defs>';
+  const inSet = hoverKey && hoverKey[0]===type ? lineage(type, hoverKey.slice(2)) : null;
+  markLineage(host, els, inSet);
   const deg={};
   for(const p of pairs){
     const pr=dm.parent[p]; if(!pr || !els[pr.from] || !els[p]) continue;
     deg[pr.from]=(deg[pr.from]||0)+1; deg[p]=(deg[p]||0)+1;
     const a=box(els[pr.from]), b=box(els[p]);
-    const mx=(a.cx+b.cx)/2, my=(a.cy+b.cy)/2, dx=b.cx-a.cx, dy=b.cy-a.cy, d=Math.hypot(dx,dy)||1;
-    const off=Math.min(60, d*0.25), qx=mx-dy/d*off, qy=my+dx/d*off;
-    const [x1,y1]=edge(a,qx,qy), [x2,y2]=edge(b,qx,qy);
+    const dx=b.cx-a.cx, dy=b.cy-a.cy;
+    let x1,y1,x2,y2,c1x,c1y,c2x,c2y;
+    if(Math.abs(dx)>=Math.abs(dy)){ /* 좌우: 옆면에서 나가 옆면으로, 수평 접선 */
+      const sg=dx>=0?1:-1;
+      x1=a.cx+sg*a.w/2; y1=a.cy; x2=b.cx-sg*b.w/2; y2=b.cy;
+      const h=Math.max(24, Math.abs(x2-x1)/2);
+      c1x=x1+sg*h; c1y=y1; c2x=x2-sg*h; c2y=y2;
+    }else{ /* 상하: 위아래면에서, 수직 접선 */
+      const sg=dy>=0?1:-1;
+      x1=a.cx; y1=a.cy+sg*a.h/2; x2=b.cx; y2=b.cy-sg*b.h/2;
+      const v=Math.max(24, Math.abs(y2-y1)/2);
+      c1x=x1; c1y=y1+sg*v; c2x=x2; c2y=y2-sg*v;
+    }
     const path=document.createElementNS(NS,'path');
-    path.setAttribute('d','M'+x1.toFixed(1)+' '+y1.toFixed(1)+' Q'+qx.toFixed(1)+' '+qy.toFixed(1)+' '+x2.toFixed(1)+' '+y2.toFixed(1));
+    path.setAttribute('d','M'+x1.toFixed(1)+' '+y1.toFixed(1)+' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+' '+c2x.toFixed(1)+' '+c2y.toFixed(1)+' '+x2.toFixed(1)+' '+y2.toFixed(1));
     path.dataset.from=pr.from; path.dataset.to=p;
     if(inSet && inSet.has(p) && inSet.has(pr.from)) path.classList.add('on');
     svg.appendChild(path);
   }
-  if(inSet) svg.classList.add('focus');
+  if(inSet && mode==='all') svg.classList.add('focus');
   if(mode==='all') for(const p in deg){ if(deg[p]>1){ els[p].classList.add('hub'); els[p].style.setProperty('--hubc','color-mix(in srgb, var(--accent) '+Math.min(85, 10+deg[p]*15)+'%, transparent)'); } }
   host.insertBefore(svg, host.firstChild);
+}
+/* 줄기에 든 칸 윤곽 표시 */
+function markLineage(host, els, set){
+  host.querySelectorAll('.lin').forEach(x=>x.classList.remove('lin'));
+  if(set) for(const p of set){ if(els[p]) els[p].classList.add('lin'); }
 }
 /* 전체 모드에서 호버 칸의 줄기만 진하게 (svg 재생성 없이 클래스만) */
 function updateFocus(){
   const host=arrowHost(), svg=host && host.querySelector('svg.arrows'); if(!svg) return;
   const type=ui.tab, set=(hoverKey && hoverKey[0]===type) ? lineage(type, hoverKey.slice(2)) : null;
+  const els={}; host.querySelectorAll('[data-key]').forEach(e=>{ if(e.dataset.key[0]===type) els[e.dataset.key.slice(2)]=e; });
+  markLineage(host, els, set);
   svg.classList.toggle('focus', !!set);
   svg.querySelectorAll('path').forEach(pa=>pa.classList.toggle('on', !!set && set.has(pa.dataset.to) && set.has(pa.dataset.from)));
 }
