@@ -211,13 +211,14 @@ table.mat{border-collapse:separate; border-spacing:0; min-width:max-content}
 /* ---------- 유도 화살표 ---------- */
 main,.mat-wrap{position:relative}
 svg.arrows{position:absolute; top:0; left:0; z-index:1; pointer-events:none; overflow:visible}
-svg.arrows path{fill:none; stroke:#fff; stroke-width:1.6; stroke-linecap:round; opacity:.55; filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
-svg.arrows path.kid{marker-start:url(#as)}
-svg.arrows path.par{marker-end:url(#ah)}
-svg.arrows.focus path{opacity:.12}
-svg.arrows path.desc{opacity:.8; stroke-dasharray:5 4}
-svg.arrows.focus path.desc{opacity:.45}
-svg.arrows path.on{opacity:1; stroke-width:2.2}
+/* 선 스타일은 직계 path에만 — marker 안의 삼각형 path까지 fill:none 이 먹어 머리가 비었던 버그 */
+svg.arrows > path{fill:none; stroke:#fff; stroke-width:1.6; stroke-linecap:round; opacity:.55; filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
+svg.arrows > path.kid{marker-start:url(#as)}
+svg.arrows > path.par{marker-end:url(#ah)}
+svg.arrows.focus > path{opacity:.12}
+svg.arrows > path.desc{opacity:.8; stroke-dasharray:5 4}
+svg.arrows.focus > path.desc{opacity:.45}
+svg.arrows > path.on{opacity:1; stroke-width:2.2}
 .chip.lin,.mcell.lin{outline:1.5px solid #fff; outline-offset:-1px; opacity:1; box-shadow:0 0 0 1px rgba(0,0,0,.35)}
 .chip.lin-desc,.mcell.lin-desc{outline-style:dashed; opacity:.85}
 .chip.hov,.mcell.hov{position:relative; z-index:2; outline:2.5px solid #fff; outline-offset:-1px; box-shadow:0 0 0 1px rgba(0,0,0,.35)}
@@ -475,9 +476,12 @@ function drawArrows(){
   svg.innerHTML='<defs><marker id="as" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse"><circle cx="5" cy="5" r="4" fill="#fff"/></marker>'
     +'<marker id="ah" viewBox="0 0 10 10" refX="8.66" refY="5" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L8.66 5L0 10z" fill="#fff"/></marker></defs>';
   /* 부모 하나당 트리 하나: 자식들 → 줄기 → 부모 (유도 과정 방향: 셋업을 떼어 원본으로) */
+  /* 부모가 화면에 없으면(역공식 숨김·필터) 보이는 가장 가까운 조상으로 잇는다 */
   const groups={};
-  for(const p of pairs){ const pr=dm.parent[p]; if(pr && R[pr.from]) (groups[pr.from]=groups[pr.from]||[]).push(p); }
-  const bounds={w:host.scrollWidth, h:host.scrollHeight, minY:(host.querySelector('thead')||{offsetHeight:0}).offsetHeight};
+  for(const p of pairs){ let pr=dm.parent[p]; while(pr && !R[pr.from]) pr=dm.parent[pr.from]; if(pr) (groups[pr.from]=groups[pr.from]||[]).push(p); }
+  const bounds={w:host.scrollWidth, h:host.scrollHeight,
+    minY:(host.querySelector('thead')||{offsetHeight:0}).offsetHeight,
+    minX:(host.querySelector('th.rh')||{offsetWidth:0}).offsetWidth};
   const lineRects = L ? [...L.all].filter(p=>R[p]).map(p=>R[p]) : null;
   const deg={};
   for(const par in groups){
@@ -511,7 +515,7 @@ function routeTree(P, K, obst, B){
     const V = vert ? c=>c.cy : c=>c.cx;
     const halfV = vert ? o=>(o.b-o.t)/2 : o=>(o.r-o.l)/2;
     const vs=all.map(V), vMin=Math.min(...vs), vMax=Math.max(...vs), straight = vMax-vMin<=1;
-    const lim = vert ? [4,B.w-4] : [B.minY+4,B.h-4];
+    const lim = vert ? [B.minX+4,B.w-4] : [B.minY+4,B.h-4];
     const cand=new Set();
     for(const c of all){ const [u0,u1]=U(c); cand.add(u0-STUB); cand.add(u1+STUB); }
     if(straight){ const es=all.map(U).sort((x,y)=>x[0]-y[0]); for(let i=1;i<es.length;i++) cand.add((es[i-1][1]+es[i][0])/2); }
@@ -538,7 +542,8 @@ function routeTree(P, K, obst, B){
   const pt = vert ? (u,v)=>u.toFixed(1)+' '+v.toFixed(1) : (u,v)=>v.toFixed(1)+' '+u.toFixed(1);
   const vP=V(P), out=[];
   /* 줄기 양 끝에서만 꺾이므로 그곳만 둥글게(반지름은 직선 여유에 맞춰 줄임); 가운데 합류는 T자 */
-  const endR=(v,stub)=>{ const other = v===vMin ? vMax : vMin; return (v===vMin||v===vMax) && Math.abs(other-v)>1 ? Math.max(0, Math.min(RAD, Math.abs(other-v)/2, stub-8)) : 0; };
+  const cntAt=v=>all.filter(x=>Math.abs(V(x)-v)<=1).length;
+  const endR=(v,stub)=>{ const other = v===vMin ? vMax : vMin; return (v===vMin||v===vMax) && Math.abs(other-v)>1 && cntAt(v)===1 ? Math.max(0, Math.min(RAD, Math.abs(other-v)/2, stub-8)) : 0; };
   K.forEach((c,i)=>{
     const [u0,u1,uc]=U(c), vc=V(c), sg=uT<uc?-1:1, ue=sg<0?u0:u1;
     const rr=endR(vc, Math.abs(uT-ue)), dir=Math.sign((vc===vMin?vMax:vMin)-vc);
